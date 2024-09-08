@@ -1,6 +1,7 @@
 # Fzf simple completion
 Pipe bash tab-completion suggestions into ``fzf`` fuzzy finder
 
+<a href="https://asciinema.org/a/675226" target="_blank"><img src="https://asciinema.org/a/675226.svg" width=75%/></a>
 
 ## Prerequisites
 - [fzf](https://github.com/junegunn/fzf) (command-line fuzzy finder)

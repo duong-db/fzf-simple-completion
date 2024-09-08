@@ -57,8 +57,8 @@ _fzf_argument_completion() {
 complete -r
 
 # Set fuzzy completion
-complete -I -F _fzf_command_completion
-complete -o default -o nospace -D -F _fzf_argument_completion
+complete -o nospace -I -F _fzf_command_completion
+complete -o nospace -D -F _fzf_argument_completion
 
 # Turn off case sensitivity for better user experience
 bind 'set completion-ignore-case on'
