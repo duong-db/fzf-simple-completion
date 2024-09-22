@@ -30,8 +30,9 @@ _fzf_get_argument_list() {
 
     # Add color
     for i in "${!COMPREPLY[@]}"; do
-        if [[ -e "${COMPREPLY[i]}" ]]; then
-            COMPREPLY[i]=$(ls -F -d --color=always "${COMPREPLY[i]}" 2>/dev/null) 
+        # "~/Documents" is not recognized as a directory due to quotes so we need to expand tilde
+        if [[ -e "${COMPREPLY[i]/#~/$HOME}" ]]; then
+            COMPREPLY[i]=$(ls -F -d --color=always "${COMPREPLY[i]/#~/$HOME}" 2>/dev/null)
         fi
     done
     printf '%s\n' "${COMPREPLY[@]}" | LC_ALL=C sort -u | LC_ALL=C sort -t '.' -k2
@@ -43,12 +44,15 @@ _fzf_argument_completion() {
 
     # Hack on directories completion
     # - Only display the last sub directory for fzf searching
-    #     Example. a/b/c -> a//b//c/ -> c/
+    #     Example. a/b/c/ -> a//b//c/ -> c/
     # - Handle the case where directory contains spaces
     #     Example. New Folder/ -> New\ Folder/
+    # - Revert $HOME back to tilde
     COMPREPLY=$(
-        _fzf_get_argument_list | sed 's/\//\/\//g; s/\/$//' | fzf $fzf_opts -d '//' --with-nth='-1..' |
-        sed 's/\/\//\//g' | sed 's/ /\\ /g; s/\\ $/ /'
+        _fzf_get_argument_list |
+        sed 's|/|//|g; s|/$||' | fzf $fzf_opts -d '//' --with-nth='-1..' | sed 's|//|/|g' |
+        sed 's| |\\ |g; s|\\ $| |' |
+        sed "s|^$HOME|~|"
     )
     printf '\e[5n'
 }
