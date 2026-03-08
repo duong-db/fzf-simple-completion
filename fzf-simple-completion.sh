@@ -3,7 +3,7 @@
 # FZF SIMPLE COMPLETION - Pipe bash tab-completion suggestions into fzf fuzzy finder
 # More details at https://github.com/duong-db/fzf-simple-completion
 
-bind '"\e[0n": redraw-current-line' 
+bind '"\e[0n": redraw-current-line'
 export FZF_DEFAULT_OPTS="--bind=tab:down --bind=btab:up --cycle"
 
 _fzf_command_completion() {
@@ -20,13 +20,23 @@ _fzf_get_argument_list() {
     local _command command=${COMP_LINE%% *}
     source /usr/share/bash-completion/bash_completion
     _command=$(complete -p "$command" 2>/dev/null | awk '{print $(NF-1)}')
-    
+
     if [[ -z $_command ]]; then 
         # Load completion using _completion_loader from bash_completion script
         _completion_loader "$command"
         _command=$(complete -p "$command" 2>/dev/null | awk '{print $(NF-1)}')
     fi
-    "$_command" 2>/dev/null
+    
+    local cur="${COMP_WORDS[COMP_CWORD]}"
+    local prev=""
+    [[ $COMP_CWORD -gt 0 ]] && prev="${COMP_WORDS[COMP_CWORD-1]}"
+    
+    "$_command" "$command" "$cur" "$prev" 2>/dev/null
+
+    # Fallback to default file completion if the specific completion function returned nothing
+    if [[ ${#COMPREPLY[@]} -eq 0 ]]; then
+        mapfile -t COMPREPLY < <(compgen -f -- "$cur" 2>/dev/null)
+    fi
 
     # Add color
     for i in "${!COMPREPLY[@]}"; do
