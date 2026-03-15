@@ -7,49 +7,60 @@ bind '"\e[0n": redraw-current-line'
 export FZF_DEFAULT_OPTS="--bind=tab:down --bind=btab:up --cycle"
 
 _fzf_command_completion() {
-    [[ -z "${COMP_LINE// /}" || $COMP_POINT -ne ${#COMP_LINE} ]] && return
+    local cur
+    _comp_get_words cur
+
     COMPREPLY=$(
         # Use compgen for commands completion
-        compgen -c -- "${COMP_WORDS[COMP_CWORD]}" 2>/dev/null | LC_ALL=C sort -u |
+        compgen -c -- "$cur" 2>/dev/null | LC_ALL=C sort -u |
         fzf --reverse --height 12 --select-1 --exit-0
     )
     printf '\e[5n'
 }
 
 _fzf_get_argument_list() {
-    local _command command=${COMP_LINE%% *}
     source /usr/share/bash-completion/bash_completion
-    _command=$(complete -p "$command" 2>/dev/null | awk '{print $(NF-1)}')
+    local cmd="${COMP_WORDS[0]}"
 
-    if [[ -z $_command ]]; then 
+    local cur prev
+    _comp_get_words cur prev
+
+    local comp_rule=$(complete -p "$cmd" 2>/dev/null)
+
+    if [[ -z "$comp_rule" ]]; then
         # Load completion using _completion_loader from bash_completion script
-        _completion_loader "$command"
-        _command=$(complete -p "$command" 2>/dev/null | awk '{print $(NF-1)}')
+        _completion_loader "$cmd" 2>/dev/null
+        comp_rule=$(complete -p "$cmd" 2>/dev/null)
     fi
-    
-    local cur="${COMP_WORDS[COMP_CWORD]}"
-    local prev=""
-    [[ $COMP_CWORD -gt 0 ]] && prev="${COMP_WORDS[COMP_CWORD-1]}"
-    
-    "$_command" "$command" "$cur" "$prev" 2>/dev/null
+
+    if [[ "$comp_rule" =~ -F[[:space:]]+([^[:space:]]+) ]]; then
+        # Function-based completion
+        local _cmd="${BASH_REMATCH[1]}"
+        "$_cmd" "$cmd" "$cur" "$prev" 2>/dev/null
+    else
+        # Flag-based completion
+        local opts="${comp_rule#complete }"
+        opts="${opts% $cmd}"
+        mapfile -t COMPREPLY < <(compgen $opts -- "$cur" 2>/dev/null)
+    fi
 
     # Fallback to default file completion if the specific completion function returned nothing
-    if [[ ${#COMPREPLY[@]} -eq 0 ]]; then
+    if [[ "${#COMPREPLY[@]}" -eq 0 && "${_cmd:-}" == "_comp_complete_minimal" ]]; then
         mapfile -t COMPREPLY < <(compgen -f -- "$cur" 2>/dev/null)
     fi
 
-    # Add color
+    # Add colors
     for i in "${!COMPREPLY[@]}"; do
         # "~/Documents" is not recognized as a directory due to quotes so we need to expand tilde
         if [[ -e "${COMPREPLY[i]/#~/$HOME}" ]]; then
-            COMPREPLY[i]=$(ls -F -d --color=always "${COMPREPLY[i]/#~/$HOME}" 2>/dev/null)
+             COMPREPLY[i]=$(ls -F -d --color=always "${COMPREPLY[i]/#~/$HOME}" 2>/dev/null)
         fi
     done
-    printf '%s\n' "${COMPREPLY[@]}" | LC_ALL=C sort -u | LC_ALL=C sort -t '.' -k2
+    printf '%s\n' "${COMPREPLY[@]}" | LC_ALL=C sort -t '.' -k2
 }
 
 _fzf_argument_completion() {
-    [[ $COMP_POINT -ne ${#COMP_LINE} ]] && return
+    [[ "$COMP_CWORD" -eq 0 ]] && return
     local fzf_opts="--ansi --reverse --height 12 --select-1 --exit-0"
 
     # Hack on directories completion
