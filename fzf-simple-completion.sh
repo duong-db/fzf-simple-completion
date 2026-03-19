@@ -3,12 +3,20 @@
 # FZF SIMPLE COMPLETION - Pipe bash tab-completion suggestions into fzf fuzzy finder
 # More details at https://github.com/duong-db/fzf-simple-completion
 
+# ------------------------------------
+# Config
+# ------------------------------------
 bind '"\e[0n": redraw-current-line'
-export FZF_DEFAULT_OPTS="--bind=tab:down --bind=btab:up --cycle"
+bind 'set completion-ignore-case on'
 
+export FZF_DEFAULT_OPTS="--bind=tab:down,btab:up --cycle"
+
+# ------------------------------------
+# Command completion
+# ------------------------------------
 _fzf_command_completion() {
     local cur
-    _comp_get_words cur
+    _get_comp_words_by_ref cur
 
     COMPREPLY=$(
         # Use compgen for commands completion
@@ -18,17 +26,42 @@ _fzf_command_completion() {
     printf '\e[5n'
 }
 
+# ------------------------------------
+# Argument completion
+# ------------------------------------
+_fzf_argument_completion() {
+    [[ -z "${COMP_LINE// /}" ]] && return
+    local fzf_opts="--ansi --reverse --height 12 --select-1 --exit-0"
+
+    # Hack on directories completion
+    # - Only display the last sub directory for fzf searching
+    #     Example. a/b/c/ -> a//b//c/ -> c/
+    # - Handle the case where directory contains spaces or special chars
+    #     Example. New Folder/ -> New\ Folder/
+    COMPREPLY=$(
+        _fzf_get_argument_list |
+        sed 's|/|//|g; s|/$||' | fzf $fzf_opts -d '//' --with-nth='-1..' | sed 's|//|/|g' |
+        while IFS= read -r selected; do
+            [[ -e $selected ]] && printf '%q' "$selected" || printf '%s' "$selected"
+        done
+    )
+    printf '\e[5n'
+}
+
+# ------------------------------------
+# Get argument completion candidates
+# ------------------------------------
 _fzf_get_argument_list() {
     source /usr/share/bash-completion/bash_completion
     local cmd="${COMP_WORDS[0]}"
 
     local cur prev
-    _comp_get_words cur prev
+    _get_comp_words_by_ref cur prev
 
     local comp_rule=$(complete -p "$cmd" 2>/dev/null)
 
     if [[ -z "$comp_rule" ]]; then
-        # Load completion using _completion_loader from bash_completion script
+        # Lazy load completion
         _completion_loader "$cmd" 2>/dev/null
         comp_rule=$(complete -p "$cmd" 2>/dev/null)
     fi
@@ -44,46 +77,68 @@ _fzf_get_argument_list() {
         mapfile -t COMPREPLY < <(compgen $opts -- "$cur" 2>/dev/null)
     fi
 
-    # Fallback to default file completion if the specific completion function returned nothing
-    if [[ "${#COMPREPLY[@]}" -eq 0 && "${_cmd:-}" == "_comp_complete_minimal" ]]; then
+    # Fallback to file completion
+    if [[ "${#COMPREPLY[@]}" -eq 0 && "${_cmd:-}" == *"_minimal" ]]; then
         mapfile -t COMPREPLY < <(compgen -f -- "$cur" 2>/dev/null)
     fi
 
     # Add colors
+    _fzf_colorize_compreply
+    printf '%s\n' "${COMPREPLY[@]}" | awk '!seen[$0]++' | LC_ALL=C sort -t '.' -k2
+}
+
+# ------------------------------------
+# Colorize COMPREPLY
+# ------------------------------------
+_fzf_colorize_compreply() {
+    local i path ext color
+
     for i in "${!COMPREPLY[@]}"; do
-        # "~/Documents" is not recognized as a directory due to quotes so we need to expand tilde
-        if [[ -e "${COMPREPLY[i]/#~/$HOME}" ]]; then
-             COMPREPLY[i]=$(ls -F -d --color=always "${COMPREPLY[i]/#~/$HOME}" 2>/dev/null)
+        path="${COMPREPLY[i]/#~/$HOME}"
+        color=""
+
+        if   [[ -L "$path" && -e "$path" ]]; then color="${FZF_LS_COLORS[ln]:-}" # symlink
+        elif [[ -L "$path"               ]]; then color="${FZF_LS_COLORS[or]:-}" # broken symlink
+        elif [[ -d "$path"               ]]; then color="${FZF_LS_COLORS[di]:-}" # directory
+        elif [[ -p "$path"               ]]; then color="${FZF_LS_COLORS[pi]:-}" # pipe
+        elif [[ -S "$path"               ]]; then color="${FZF_LS_COLORS[so]:-}" # socket
+        elif [[ -b "$path"               ]]; then color="${FZF_LS_COLORS[bd]:-}" # block device
+        elif [[ -c "$path"               ]]; then color="${FZF_LS_COLORS[cd]:-}" # character device
+        elif [[ -u "$path"               ]]; then color="${FZF_LS_COLORS[su]:-}" # setuid
+        elif [[ -g "$path"               ]]; then color="${FZF_LS_COLORS[sg]:-}" # setgid
+        elif [[ -x "$path"               ]]; then color="${FZF_LS_COLORS[ex]:-}" # executable
+        elif [[ -f "$path"               ]]; then 
+            ext="${path##*.}"
+            color="${FZF_LS_COLORS["*.$ext"]:-${FZF_LS_COLORS[fi]:-}}" # file
         fi
+
+        [[ -n "$color" ]] && COMPREPLY[i]=$'\e['"$color"$'m'"${COMPREPLY[i]}"$'\e[0m'
+        [[ -d "$path" ]] && COMPREPLY[i]="${COMPREPLY[i]}/"
     done
-    printf '%s\n' "${COMPREPLY[@]}" | LC_ALL=C sort -t '.' -k2
 }
 
-_fzf_argument_completion() {
-    [[ "$COMP_CWORD" -eq 0 ]] && return
-    local fzf_opts="--ansi --reverse --height 12 --select-1 --exit-0"
-
-    # Hack on directories completion
-    # - Only display the last sub directory for fzf searching
-    #     Example. a/b/c/ -> a//b//c/ -> c/
-    # - Handle the case where directory contains spaces
-    #     Example. New Folder/ -> New\ Folder/
-    # - Revert $HOME back to tilde
-    COMPREPLY=$(
-        _fzf_get_argument_list |
-        sed 's|/|//|g; s|/$||' | fzf $fzf_opts -d '//' --with-nth='-1..' | sed 's|//|/|g' |
-        sed 's| |\\ |g; s|\\ $| |' |
-        sed "s|^$HOME|~|"
-    )
-    printf '\e[5n'
+# ------------------------------------
+# LS_COLORS parser
+# ------------------------------------
+_fzf_init_ls_colors() {
+    declare -gA FZF_LS_COLORS
+    local c kv k v
+    IFS=':' read -r -a c <<< "$(dircolors -b 2>/dev/null)"
+    for kv in "${c[@]}"; do
+        IFS='=' read -r k v <<< "${kv}"
+        [[ -n "$k" && -n "$v" ]] && FZF_LS_COLORS["$k"]="$v"
+    done
 }
+_fzf_init_ls_colors
+unset -f _fzf_init_ls_colors
 
-# Remove default completions
+# ------------------------------------
+# Register completion
+# ------------------------------------
+# Remove all existing completion
 complete -r
 
-# Set fuzzy completion
-complete -o nospace -I -F _fzf_command_completion
+# Add new completion rules
 complete -o nospace -D -F _fzf_argument_completion
-
-# Turn off case sensitivity for better user experience
-bind 'set completion-ignore-case on'
+complete -o nospace -E -F _fzf_command_completion
+complete -o nospace -I -F _fzf_command_completion
