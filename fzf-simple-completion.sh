@@ -52,13 +52,11 @@ _fzf_argument_completion() {
 # Get argument completion candidates
 # ------------------------------------
 _fzf_get_argument_list() {
-    source /usr/share/bash-completion/bash_completion
-    local cmd="${COMP_WORDS[0]}"
-
     local cur prev
     _get_comp_words_by_ref cur prev
 
-    local comp_rule=$(complete -p "$cmd" 2>/dev/null)
+    local cmd="${COMP_WORDS[0]}"
+    local comp_rule="${FZF_BASH_DEFAULT_COMPS["$cmd"]}"
 
     if [[ -z "$comp_rule" ]]; then
         # Lazy load completion
@@ -131,6 +129,19 @@ _fzf_init_ls_colors() {
 }
 _fzf_init_ls_colors
 unset -f _fzf_init_ls_colors
+
+# ------------------------------------
+# Bash default completions
+# ------------------------------------
+_fzf_init_default_completions() {
+    declare -gA FZF_BASH_DEFAULT_COMPS
+    while read -r line; do
+        local cmd="${line##* }"
+        [[ -n "$cmd" ]] && FZF_BASH_DEFAULT_COMPS["$cmd"]="$line"
+    done < <(complete -p 2>/dev/null)
+}
+_fzf_init_default_completions
+unset -f _fzf_init_default_completions
 
 # ------------------------------------
 # Register completion
