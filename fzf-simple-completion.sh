@@ -65,11 +65,11 @@ _fzf_get_argument_list() {
     fi
 
     if [[ "$comp_rule" =~ -F[[:space:]]+([^[:space:]]+) ]]; then
-        # Function-based completion
+        # Function-based completion (Example. complete -F _comp_complete_longopt ls)
         local _cmd="${BASH_REMATCH[1]}"
         "$_cmd" "$cmd" "$cur" "$prev" 2>/dev/null
     else
-        # Flag-based completion
+        # Flag-based completion (Example. complete -c which)
         local opts="${comp_rule#complete }"
         opts="${opts% $cmd}"
         mapfile -t COMPREPLY < <(compgen $opts -- "$cur" 2>/dev/null)
@@ -144,9 +144,9 @@ _fzf_init_default_completions
 unset -f _fzf_init_default_completions
 
 # ------------------------------------
-# Register completion
+# Register completions
 # ------------------------------------
-# Remove all existing completion
+# Remove all existing completions
 complete -r
 
 # Add new completion rules
