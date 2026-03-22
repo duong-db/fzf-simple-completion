@@ -38,7 +38,8 @@ _fzf_argument_completion() {
     # - Handle the case where directory contains spaces or special chars
     #     Example. New Folder/ -> New\ Folder/
     COMPREPLY=$(
-        _fzf_get_argument_list "$@" |
+        _fzf_get_argument_list "$@" | 
+        _fzf_colorize_compreply |
         sed 's|/|//|g; s|/$||' | fzf $fzf_opts -d '//' --with-nth='-1..' | sed 's|//|/|g' |
         while IFS= read -r selected; do
             [[ -e $selected ]] && printf '%q' "$selected" || printf '%s' "$selected"
@@ -79,8 +80,6 @@ _fzf_get_argument_list() {
         mapfile -t COMPREPLY < <(compgen -f -- "$cur" 2>/dev/null)
     fi
 
-    # Add colors
-    _fzf_colorize_compreply
     printf '%s\n' "${COMPREPLY[@]}" | awk '!seen[$0]++' | LC_ALL=C sort -t '.' -k2
 }
 
@@ -88,12 +87,11 @@ _fzf_get_argument_list() {
 # Colorize COMPREPLY
 # ------------------------------------
 _fzf_colorize_compreply() {
-    local i path ext color
-
-    for i in "${!COMPREPLY[@]}"; do
-        path="${COMPREPLY[i]/#~/$HOME}"
+    local line path ext color
+    while IFS= read -r line; do
+        path="${line/#~/$HOME}"
         color=""
-
+        
         if   [[ -L "$path" && -e "$path" ]]; then color="${FZF_LS_COLORS[ln]:-}" # symlink
         elif [[ -L "$path"               ]]; then color="${FZF_LS_COLORS[or]:-}" # broken symlink
         elif [[ -d "$path"               ]]; then color="${FZF_LS_COLORS[di]:-}" # directory
@@ -108,9 +106,11 @@ _fzf_colorize_compreply() {
             ext="${path##*.}"
             color="${FZF_LS_COLORS["*.$ext"]:-${FZF_LS_COLORS[fi]:-}}" # file
         fi
-
-        [[ -n "$color" ]] && COMPREPLY[i]=$'\e['"$color"$'m'"${COMPREPLY[i]}"$'\e[0m'
-        [[ -d "$path" ]] && COMPREPLY[i]="${COMPREPLY[i]}/"
+        
+        [[ -n "$color" ]] && line=$'\e['"$color"$'m'"$line"$'\e[0m'
+        [[ -d "$path" ]] && line="${line}/"
+        
+        printf '%s\n' "$line"
     done
 }
 
