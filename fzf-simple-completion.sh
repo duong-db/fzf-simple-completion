@@ -15,9 +15,8 @@ export FZF_DEFAULT_OPTS="--bind=tab:down,btab:up --cycle"
 # Command completion
 # ------------------------------------
 _fzf_command_completion() {
-    local cur
-    _get_comp_words_by_ref cur
-
+    local cur="$2"
+    
     COMPREPLY=$(
         # Use compgen for commands completion
         compgen -c -- "$cur" 2>/dev/null | LC_ALL=C sort -u |
@@ -39,7 +38,7 @@ _fzf_argument_completion() {
     # - Handle the case where directory contains spaces or special chars
     #     Example. New Folder/ -> New\ Folder/
     COMPREPLY=$(
-        _fzf_get_argument_list |
+        _fzf_get_argument_list "$@" |
         sed 's|/|//|g; s|/$||' | fzf $fzf_opts -d '//' --with-nth='-1..' | sed 's|//|/|g' |
         while IFS= read -r selected; do
             [[ -e $selected ]] && printf '%q' "$selected" || printf '%s' "$selected"
@@ -52,14 +51,14 @@ _fzf_argument_completion() {
 # Get argument completion candidates
 # ------------------------------------
 _fzf_get_argument_list() {
-    local cur prev
-    _get_comp_words_by_ref cur prev
+    local cmd="$1" 
+    local cur="$2"
 
-    local cmd="${COMP_WORDS[0]}"
+    # Load completion rule from the default
     local comp_rule="${FZF_BASH_DEFAULT_COMPS["$cmd"]}"
 
     if [[ -z "$comp_rule" ]]; then
-        # Lazy load completion
+        # Lazy load via _completion_loader
         _completion_loader "$cmd" 2>/dev/null
         comp_rule=$(complete -p "$cmd" 2>/dev/null)
     fi
@@ -67,7 +66,7 @@ _fzf_get_argument_list() {
     if [[ "$comp_rule" =~ -F[[:space:]]+([^[:space:]]+) ]]; then
         # Function-based completion (Example. complete -F _comp_complete_longopt ls)
         local _cmd="${BASH_REMATCH[1]}"
-        "$_cmd" "$cmd" "$cur" "$prev" 2>/dev/null
+        "$_cmd" "$@" 2>/dev/null
     else
         # Flag-based completion (Example. complete -c which)
         local opts="${comp_rule#complete }"
