@@ -52,6 +52,10 @@ _fzf_argument_completion() {
 # Get argument completion candidates
 # ------------------------------------
 _fzf_get_argument_list() {
+    
+    # Resolve alias if it exists
+    [[ ${BASH_ALIASES[$1]} ]] && set -- ${BASH_ALIASES[$1]} "${@:2}"
+
     local cmd="$1" 
     local cur="$2"
 
