@@ -19,7 +19,7 @@ _fzf_command_completion() {
     
     COMPREPLY=$(
         # Use compgen for commands completion
-        compgen -c -- "$cur" 2>/dev/null | LC_ALL=C sort -u |
+        compgen -c -- "$cur" 2>/dev/null | awk '!seen[$0]++' |
         fzf --reverse --height 12 --select-1 --exit-0
     )
     printf '\e[5n'
@@ -39,10 +39,14 @@ _fzf_argument_completion() {
     #     Example. New Folder/ -> New\ Folder/
     COMPREPLY=$(
         _fzf_get_argument_list "$@" | 
-        _fzf_colorize_compreply |
-        sed 's|/|//|g; s|/$||' | fzf $fzf_opts -d '//' --with-nth='-1..' | sed 's|//|/|g' |
-        while IFS= read -r selected; do
-            [[ -e $selected ]] && printf '%q' "$selected" || printf '%s' "$selected"
+        _fzf_colorize_compreply | fzf $fzf_opts -d '//' --with-nth='-1..' |
+        while IFS= read -r line; do
+            path="${line/#~\//$HOME\/}"
+            if [[ -e "$path" ]]; then
+                printf '%q' "$path" | sed "s|^$HOME/|~/|; s|//|/|g"
+            else
+                printf '%s' "$line"
+            fi
         done
     )
     printf '\e[5n'
@@ -54,7 +58,7 @@ _fzf_argument_completion() {
 _fzf_get_argument_list() {
     
     # Resolve alias if it exists
-    [[ ${BASH_ALIASES[$1]} ]] && set -- ${BASH_ALIASES[$1]} "${@:2}"
+    [[ ${BASH_ALIASES["$1"]} ]] && set -- ${BASH_ALIASES["$1"]} "${@:2}"
 
     local cmd="$1" 
     local cur="$2"
@@ -78,7 +82,7 @@ _fzf_get_argument_list() {
         opts="${opts% $cmd}"
         mapfile -t COMPREPLY < <(compgen $opts -- "$cur" 2>/dev/null)
     fi
-
+    
     # Fallback to file completion
     if [[ "${#COMPREPLY[@]}" -eq 0 && "${_cmd:-}" == *"_minimal" ]]; then
         mapfile -t COMPREPLY < <(compgen -f -- "$cur" 2>/dev/null)
@@ -93,9 +97,9 @@ _fzf_get_argument_list() {
 _fzf_colorize_compreply() {
     local line path ext color
     while IFS= read -r line; do
-        path="${line/#~/$HOME}"
+        path="${line/#~\//$HOME\/}"
         color=""
-        
+
         if   [[ -L "$path" && -e "$path" ]]; then color="${FZF_LS_COLORS[ln]:-}" # symlink
         elif [[ -L "$path"               ]]; then color="${FZF_LS_COLORS[or]:-}" # broken symlink
         elif [[ -d "$path"               ]]; then color="${FZF_LS_COLORS[di]:-}" # directory
@@ -112,6 +116,7 @@ _fzf_colorize_compreply() {
         fi
         
         [[ -n "$color" ]] && line=$'\e['"$color"$'m'"$line"$'\e[0m'
+        [[ -e "$path" ]] && line="${line//\//\/\/}"
         [[ -d "$path" ]] && line="${line}/"
         
         printf '%s\n' "$line"
