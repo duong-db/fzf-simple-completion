@@ -16,7 +16,7 @@ export FZF_DEFAULT_OPTS="--bind=tab:down,btab:up --cycle"
 # ------------------------------------
 _fzf_command_completion() {
     local cur="$2"
-    
+
     COMPREPLY=$(
         # Use compgen for commands completion
         compgen -c -- "$cur" 2>/dev/null | awk '!seen[$0]++' |
@@ -39,11 +39,12 @@ _fzf_argument_completion() {
     #     Example. New Folder/ -> New\ Folder/
     COMPREPLY=$(
         _fzf_get_argument_list "$@" | 
-        _fzf_colorize_compreply | fzf $fzf_opts -d '//' --with-nth='-1..' |
+        _fzf_colorize_compreply | fzf $fzf_opts -d '//' --with-nth='-1..' | sed 's|//|/|g' |
         while IFS= read -r line; do
-            path="${line/#~\//$HOME\/}"
+            local path="$line"
+            __expand_tilde_by_ref path 2>/dev/null
             if [[ -e "$path" ]]; then
-                printf '%q' "$path" | sed "s|^$HOME/|~/|; s|//|/|g"
+                [[ "$line" == \~* ]] && printf '~%q' "${line#\~}" || printf '%q' "$line"
             else
                 printf '%s' "$line"
             fi
@@ -56,12 +57,10 @@ _fzf_argument_completion() {
 # Get argument completion candidates
 # ------------------------------------
 _fzf_get_argument_list() {
-    
+
     # Resolve alias if it exists
     [[ ${BASH_ALIASES["$1"]} ]] && set -- ${BASH_ALIASES["$1"]} "${@:2}"
-
-    local cmd="$1" 
-    local cur="$2"
+    local cmd="$1" cur="$2"
 
     # Load completion rule from the default
     local comp_rule="${FZF_BASH_DEFAULT_COMPS["$cmd"]}"
@@ -97,8 +96,8 @@ _fzf_get_argument_list() {
 _fzf_colorize_compreply() {
     local line path ext color
     while IFS= read -r line; do
-        path="${line/#~\//$HOME\/}"
-        color=""
+        path="$line"
+        __expand_tilde_by_ref path 2>/dev/null
 
         if   [[ -L "$path" && -e "$path" ]]; then color="${FZF_LS_COLORS[ln]:-}" # symlink
         elif [[ -L "$path"               ]]; then color="${FZF_LS_COLORS[or]:-}" # broken symlink
@@ -117,8 +116,8 @@ _fzf_colorize_compreply() {
         
         [[ -n "$color" ]] && line=$'\e['"$color"$'m'"$line"$'\e[0m'
         [[ -e "$path" ]] && line="${line//\//\/\/}"
-        [[ -d "$path" ]] && line="${line}/"
-        
+        [[ -d "$path" ]] && line+="/"
+
         printf '%s\n' "$line"
     done
 }
@@ -128,12 +127,10 @@ _fzf_colorize_compreply() {
 # ------------------------------------
 _fzf_init_ls_colors() {
     declare -gA FZF_LS_COLORS
-    local c kv k v
-    IFS=':' read -r -a c <<< "$(dircolors -b 2>/dev/null)"
-    for kv in "${c[@]}"; do
-        IFS='=' read -r k v <<< "${kv}"
+    local k v
+    while IFS='=' read -r k v; do
         [[ -n "$k" && -n "$v" ]] && FZF_LS_COLORS["$k"]="$v"
-    done
+    done < <(dircolors -b 2>/dev/null | tr ':' '\n')
 }
 _fzf_init_ls_colors
 unset -f _fzf_init_ls_colors
@@ -143,8 +140,9 @@ unset -f _fzf_init_ls_colors
 # ------------------------------------
 _fzf_init_default_completions() {
     declare -gA FZF_BASH_DEFAULT_COMPS
+    local cmd line
     while read -r line; do
-        local cmd="${line##* }"
+        cmd="${line##* }"
         [[ -n "$cmd" ]] && FZF_BASH_DEFAULT_COMPS["$cmd"]="$line"
     done < <(complete -p 2>/dev/null)
 }
